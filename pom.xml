@@ -59,6 +59,17 @@
     </distributionManagement>
 
     <build>
+        <!-- the plugin version Maven 3.6.1 (the README's) selects by default: newer versions merge the
+             duplicate module-info.class of sc-api-support's jar-with-dependencies differently -->
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-assembly-plugin</artifactId>
+                    <version>2.2-beta-5</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
 
             <plugin>

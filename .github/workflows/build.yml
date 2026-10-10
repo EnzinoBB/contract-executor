@@ -52,6 +52,16 @@ jobs:
           mvn -B -q -DskipTests package
           ls -la contract-executor/target/*.jar sc-api-support/target/*.jar
 
+      - name: Module descriptors of the built jars
+        if: always()
+        run: |
+          for jar in sc-api-support/target/*.jar contract-executor/target/*.jar; do
+            [ -f "$jar" ] || continue
+            echo "== $jar"
+            unzip -l "$jar" | grep -c 'module-info.class' || true
+            (cd "$(mktemp -d)" && unzip -oq "$OLDPWD/$jar" module-info.class 2>/dev/null && javap module-info.class | head -2) || true
+          done
+
       # compare with the executor shipped in the mainnet release, class by class
       - name: Compare with the mainnet executor
         run: |
