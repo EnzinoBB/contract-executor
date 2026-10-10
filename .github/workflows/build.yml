@@ -1,0 +1,84 @@
+name: Build
+
+# Reproducible build of contract-executor build 1518 (the executor of node release mainnet-4.2.532.0).
+# Its Credits dependencies were never published to the maven branches the poms point at
+# (sc-api-internal 2.2, general 1.3, executor_client 1.4), so they are built here from their
+# repositories first; node_client 1.4 and general 1.2 still come from those branches.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the build reads the commit count (git.total.commit.count) the node checks
+
+      - name: Checkout smart-contract-api
+        uses: actions/checkout@v4
+        with:
+          repository: CREDITSCOM/smart-contract-api
+          ref: 677c567f308972224232023b18de531d22db2b8b  # dev: sc-api-internal 2.2
+          path: deps/smart-contract-api
+
+      - name: Checkout thrift-api-client
+        uses: actions/checkout@v4
+        with:
+          repository: EnzinoBB/thrift-api-client
+          ref: build/reproducible-1518  # 59d1e9af (before the libthrift 0.14 bump) + Eclipse pins
+          path: deps/thrift-api-client
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+          cache: maven
+
+      - name: Build dependencies
+        run: |
+          (cd deps/thrift-api-client && mvn -B -q -DskipTests install)
+          (cd deps/smart-contract-api && mvn -B -q -DskipTests install)
+
+      - name: Build contract executor
+        run: |
+          mvn -B -q -DskipTests package
+          ls -la contract-executor/target/*.jar sc-api-support/target/*.jar
+
+      # compare with the executor shipped in the mainnet release, class by class
+      - name: Compare with the mainnet executor
+        run: |
+          curl -sSfL https://github.com/CREDITSCOM/node/releases/download/mainnet-4.2.532.0/Ubuntu20_Mainnet-4.2.532.0.tar.gz \
+            | tar -xzf - csnode/contract-executor.jar csnode/sc-api-support.jar
+          python3 - <<'PY'
+          import glob, hashlib, zipfile
+          def classes(path):
+              z = zipfile.ZipFile(path)
+              return {n: hashlib.sha1(z.read(n)).hexdigest() for n in z.namelist() if n.endswith(".class")}
+          # every jar the build produced (plain and with dependencies) against its release counterpart
+          pairs = [("csnode/contract-executor.jar", p) for p in glob.glob("contract-executor/target/*.jar")]
+          pairs += [("csnode/sc-api-support.jar", p) for p in glob.glob("sc-api-support/target/*.jar")]
+          for release, built in pairs:
+              a, b = classes(release), classes(built)
+              same = [n for n in a if b.get(n) == a[n]]
+              differ = sorted(n for n in a if n in b and b[n] != a[n])
+              print(f"{built}: {len(same)}/{len(a)} classes identical to {release}, {len(differ)} differ, "
+                    f"{len(set(a) - set(b))} missing, {len(set(b) - set(a))} extra")
+              for n in differ[:20]:
+                  print("  differs:", n)
+          PY
+
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-executor-${{ github.sha }}
+          path: |
+            contract-executor/target/contract-executor-*.jar
+            sc-api-support/target/sc-api-support-*.jar
