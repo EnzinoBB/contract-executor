@@ -35,11 +35,13 @@ jobs:
           ref: build/reproducible-1518  # 59d1e9af (before the libthrift 0.14 bump) + Eclipse pins
           path: deps/thrift-api-client
 
-      - name: Set up Java 11
+      # build 1518 was compiled with JDK 11.0.3 (Build-Jdk: 11.0.3-ojdkbuild); later 11.0.x javac
+      # versions generate different string concatenation code in a few toString() methods
+      - name: Set up Java 11.0.3
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '11'
+          distribution: zulu
+          java-version: '11.0.3'
           cache: maven
 
       - name: Build dependencies
