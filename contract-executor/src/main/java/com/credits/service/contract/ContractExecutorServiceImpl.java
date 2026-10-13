@@ -60,7 +60,7 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
     @Override
     public ReturnValue deploySmartContract(DeployContractSession session) throws ContractExecutorException {
         final var contractClass = findRootClass(compileClassesAndDropPermissions(session.byteCodeObjectDataList, getSmartContractClassLoader()));
-        permissionManager.dropSmartContractRights(contractClass);
+        dropRightsOfContractClass(contractClass);
         final var methodResult = new Deployer(session, contractClass).deploy();
         final var newContractState = methodResult.getInvokedObject() != null
                                      ? serialize(methodResult.getInvokedObject())
@@ -85,7 +85,7 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
 
     private ReturnValue executeContractMethod(InvokeMethodSession session, Object contractInstance) {
         final var executor = new LimitTimeThreadMethodExecutor(session, contractInstance);
-        permissionManager.dropSmartContractRights(contractInstance.getClass());
+        dropRightsOfContractClass(contractInstance.getClass());
         final var methodResults = executor.executeIntoLimitTimeThread();
 
         session.usedContracts.values().forEach(contract -> contract.getContractData().setContractState(serialize(contract.getInstance())));
@@ -163,6 +163,16 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
                         true));
         usedContract.setInstance(instance);
         session.usedContracts.put(session.contractAddress, usedContract);
+    }
+
+    // A contract's root class is always defined by a contract loader. One returned because its name is
+    // taken (one of the executor's own classes or the JDK's) is refused: confining it would confine it
+    // for the whole process, and running it unconfined would run it with the executor's permissions.
+    private void dropRightsOfContractClass(Class<?> contractClass) {
+        if (!(contractClass.getClassLoader() instanceof ByteCodeContractClassLoader)) {
+            throw new ContractExecutorException("contract class " + contractClass.getName() + " is not defined by the contract");
+        }
+        permissionManager.dropSmartContractRights(contractClass);
     }
 
     private List<Class<?>> compileClassesAndDropPermissions(List<ByteCodeObjectData> byteCodeObjectList, ByteCodeContractClassLoader classLoader)
