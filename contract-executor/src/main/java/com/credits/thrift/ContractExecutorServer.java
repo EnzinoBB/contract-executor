@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.inject.Inject;
+import java.net.InetSocketAddress;
 
 import static com.credits.utils.Constants.*;
 
@@ -48,11 +49,10 @@ public class ContractExecutorServer implements Runnable {
 
     private void serverStart(ContractExecutor.Processor processor) {
         try {
-            final var transport = properties.readClientTimeout > 0
-                                        ? new TServerSocket(properties.executorPort, properties.readClientTimeout)
-                                        : new TServerSocket(properties.executorPort);
+            final var address = new InetSocketAddress(properties.executorHost, properties.executorPort);
+            final var transport = new TServerSocket(address, Math.max(properties.readClientTimeout, 0));
             final var server = new TThreadPoolServer(new TThreadPoolServer.Args(transport).processor(processor));
-            logger.info("Starting the Thrift server on port {}...", properties.executorPort);
+            logger.info("Starting the Thrift server on {}:{}...", properties.executorHost, properties.executorPort);
             server.serve();
         } catch (TTransportException e) {
             logger.error("Cannot start Thrift server on port " + properties.executorPort + ". " + e.getMessage(), e);

@@ -10,6 +10,8 @@ public class ApplicationProperties {
     public static final short API_VERSION = 4;
 
     public int executorPort = 9080;
+    // only the local node should reach the executor; set 0.0.0.0 for a node on another host
+    public String executorHost = "127.0.0.1";
     public String nodeApiHost = "localhost";
     public int nodeApiPort = 9070;
     public String jdkPath;
@@ -33,6 +35,7 @@ public class ApplicationProperties {
             nodeApiHost = properties.getProperty("contract.executor.node.api.host");
             nodeApiPort = Integer.parseInt(properties.getProperty("contract.executor.node.api.port"));
             executorPort = Integer.parseInt(properties.getProperty("contract.executor.port"));
+            executorHost = properties.getProperty("contract.executor.host", executorHost);
             readClientTimeout = Integer.parseInt(properties.getProperty("contract.executor.read.client.timeout"));
             jdkPath = properties.getProperty("jdk.path");
         } catch (IOException e) {
