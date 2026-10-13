@@ -42,17 +42,22 @@ jobs:
         with:
           distribution: zulu
           java-version: '11.0.3'
-          cache: maven
 
       - name: Build dependencies
         run: |
-          (cd deps/thrift-api-client && mvn -B -q -DskipTests install)
-          (cd deps/smart-contract-api && mvn -B -q -DskipTests install)
+          (cd deps/thrift-api-client && mvn -B -DskipTests install)
+          (cd deps/smart-contract-api && mvn -B -DskipTests install)
 
       - name: Build contract executor
         run: |
-          mvn -B -q -DskipTests package
+          mvn -B -DskipTests package
           ls -la contract-executor/target/*.jar sc-api-support/target/*.jar
+
+      - name: Downloads from CREDITSCOM
+        if: always()
+        run: |
+          find ~/.m2/repository -name _remote.repositories | xargs grep -H 'mvn-repo=' | sed "s|$HOME/.m2/repository/||" | sort
+          find ~/.m2/repository -name '*.lastUpdated' -o -name resolver-status.properties | xargs grep -lHi 'creditscom' | sed "s|$HOME/.m2/repository/||" | sort
 
       - name: Module descriptors of the built jars
         if: always()
