@@ -114,3 +114,40 @@ jobs:
           path: |
             contract-executor/target/contract-executor-*.jar
             sc-api-support/target/sc-api-support-*.jar
+
+  # A tag executor-<name> publishes the jars under the names the node release uses: the jar with
+  # dependencies as contract-executor.jar (its manifest loads sc-api-support.jar from its directory)
+  # and the sc-api-support assembly as sc-api-support.jar. The community node packages take them
+  # from here.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/executor-')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download jars
+        uses: actions/download-artifact@v4
+        with:
+          name: contract-executor-${{ github.sha }}
+          path: jars
+
+      - name: Publish
+        run: |
+          mkdir release
+          cp "$(ls -S jars/contract-executor/target/contract-executor-*.jar | head -1)" release/contract-executor.jar
+          cp "$(ls -S jars/sc-api-support/target/sc-api-support-*.jar | head -1)" release/sc-api-support.jar
+          unzip -p release/contract-executor.jar git.properties | tee git.properties
+          (cd release && sha256sum *.jar > SHA256SUMS && cat SHA256SUMS)
+          commits=$(sed -n 's/^git.total.commit.count=//p' git.properties | tr -d '\r')
+          cat > notes.md <<NOTES
+          Contract executor build ${commits} from ${GITHUB_REPOSITORY}@${GITHUB_SHA}: build 1518 of the
+          mainnet release 4.2.532.0 with the compatible fixes merged since. Built with JDK 11.0.3 and
+          nothing fetched from CREDITSCOM (see BUILDING.md).
+
+          A node accepts it only with executor_commit_max >= ${commits} in config.ini.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Contract executor ${GITHUB_REF_NAME#executor-} (build ${commits})" --notes-file notes.md
