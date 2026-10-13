@@ -7,6 +7,7 @@ import com.credits.client.node.thrift.generated.WalletIdGetResult;
 import com.credits.exception.ApiClientException;
 import com.credits.general.thrift.ThriftClientPool;
 import org.apache.thrift.TException;
+import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,53 +25,64 @@ public class NodeThriftApiExecClient implements NodeThriftApiExec {
 
     @Override
     public GetSeedResult getSeed(long accessId) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.GetSeed(accessId));
+        return callThrift(client -> client.GetSeed(accessId), true);
     }
 
     @Override
     public SmartContractGetResult getSmartContractBinary(long accessId, byte[] address) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.SmartContractGet(accessId, ByteBuffer.wrap(address)));
+        return callThrift(client -> client.SmartContractGet(accessId, ByteBuffer.wrap(address)), true);
     }
 
 
     @Override
     public SendTransactionResult sendTransaction(long accessId, Transaction transaction) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.SendTransaction(accessId, transaction));
+        return callThrift(client -> client.SendTransaction(accessId, transaction), false);
     }
 
     @Override
     public WalletIdGetResult getWalletId(long accessId, byte[] address) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.WalletIdGet(accessId, ByteBuffer.wrap(address)));
+        return callThrift(client -> client.WalletIdGet(accessId, ByteBuffer.wrap(address)), true);
     }
 
     @Override
     public WalletBalanceGetResult getBalance(byte[] address) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.WalletBalanceGet(ByteBuffer.wrap(address)));
+        return callThrift(client -> client.WalletBalanceGet(ByteBuffer.wrap(address)), true);
     }
 
     @Override
     public GetDateTimeResult getDateTime(long accessId) throws ApiClientException {
-        APIEXEC.Client client = pool.getResource();
-        return callThrift(client, () -> client.GetDateTime(accessId));
+        return callThrift(client -> client.GetDateTime(accessId), true);
     }
 
-    private <R> R callThrift(APIEXEC.Client client, Function<R> method) throws ApiClientException {
-        try {
-            R res = method.apply();
-            pool.returnResource(client);
-            return res;
-        } catch (TException e) {
-            pool.returnBrokenResource(client);
-            throw new ApiClientException(e);
+    // A pooled connection goes back to the pool on every outcome: an exception other than TException
+    // (or a Thread.stop of the calling contract) used to leak it. A read-only call is retried once on a
+    // new connection when the pooled one was dead, typically after a node restart.
+    private <R> R callThrift(Function<R> method, boolean retryDroppedConnection) throws ApiClientException {
+        for (int attempt = 0; ; attempt++) {
+            final APIEXEC.Client client = pool.getResource();
+            boolean healthy = false;
+            try {
+                final R res = method.apply(client);
+                healthy = true;
+                return res;
+            } catch (TTransportException e) {
+                if (!retryDroppedConnection || attempt > 0) {
+                    throw new ApiClientException(e);
+                }
+                logger.debug("connection to node dropped, retrying once: {}", e.getMessage());
+            } catch (TException e) {
+                throw new ApiClientException(e);
+            } finally {
+                if (healthy) {
+                    pool.returnResource(client);
+                } else {
+                    pool.returnBrokenResource(client);
+                }
+            }
         }
     }
 
     private interface Function<R> {
-        R apply() throws TException;
+        R apply(APIEXEC.Client client) throws TException;
     }
 }
