@@ -7,11 +7,23 @@ import exception.ContractExecutorException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.security.Permissions;
 import static com.credits.ApplicationProperties.API_VERSION;
-import com.credits.secure.Sandbox;
+import com.credits.secure.PermissionsManager;
 
 public class ContractExecutorUtils {
+
+    // every class of a contract runs with the contract's permissions from the moment it is defined
+    private static final PermissionsManager CONTRACT_PERMISSIONS = new PermissionsManager();
+
+    // only a class the contract loader defined itself: loadClass returns an already loaded class when
+    // the name is taken (the executor's own or the JDK's), and confining that would confine it
+    // process-wide for every later call
+    private static Class<?> confined(Class<?> loaded, ByteCodeContractClassLoader classLoader) {
+        if (loaded.getClassLoader() == classLoader) {
+            CONTRACT_PERMISSIONS.dropSmartContractRights(loaded);
+        }
+        return loaded;
+    }
 
     public static Class<?> findRootClass(List<Class<?>> classes) {
         return classes.stream()
@@ -21,7 +33,7 @@ public class ContractExecutorUtils {
     }
 
     public static void loadClassesToClassloader(List<ByteCodeObjectData> objectDataList, ByteCodeContractClassLoader classLoader) {
-        objectDataList.forEach(o -> classLoader.loadClass(o.getName(), o.getByteCode()));
+        objectDataList.forEach(o -> confined(classLoader.loadClass(o.getName(), o.getByteCode()), classLoader));
     }
 
     public static List<Class<?>> compileSmartContractByteCode(List<ByteCodeObjectData> smartContractByteCodeData,
@@ -29,9 +41,8 @@ public class ContractExecutorUtils {
         
         List<Class<?>> compiledClasses = new ArrayList<>(smartContractByteCodeData.size());
         for (ByteCodeObjectData compilationUnit : smartContractByteCodeData) {
-            Permissions permissions = new Permissions();
-            Sandbox.confine(compilationUnit.getClass(), permissions);
-            compiledClasses.add(byteCodeContractClassLoader.loadClass(compilationUnit.getName(), compilationUnit.getByteCode()));
+            compiledClasses.add(confined(byteCodeContractClassLoader.loadClass(compilationUnit.getName(), compilationUnit.getByteCode()),
+                                          byteCodeContractClassLoader));
         }
         return compiledClasses;
     }
