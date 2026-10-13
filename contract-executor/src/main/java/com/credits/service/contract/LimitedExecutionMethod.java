@@ -11,6 +11,7 @@ import java.util.concurrent.TimeoutException;
 
 import static java.lang.Thread.sleep;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static pojo.SmartContractConstants.forgetSmartContractConstants;
 import static pojo.SmartContractConstants.initSmartContractConstants;
 
 class LimitedExecutionMethod<R> {
@@ -70,6 +71,9 @@ class LimitedExecutionMethod<R> {
             }
         } catch (Throwable e) {
             exception = e;
+        } finally {
+            // only a deploy's constructor takes the constants: drop them after every other call too
+            forgetSmartContractConstants(limitedTimeThread.getId());
         }
         return result;
     }

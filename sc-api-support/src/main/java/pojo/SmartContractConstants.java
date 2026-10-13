@@ -2,13 +2,14 @@ package pojo;
 
 import pojo.session.DeployContractSession;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SmartContractConstants {
-    private static Map<Long, SmartContractConstants> sessions = Collections.synchronizedMap(new WeakHashMap<>());
+    // a strong map: nothing else references the boxed thread id, so a weak key could be collected
+    // between init and the contract constructor, failing that deploy on this node only
+    private static final Map<Long, SmartContractConstants> sessions = new ConcurrentHashMap<>();
     public final String initiator;
     public final String contractAddress;
     public final long accessId;
@@ -26,6 +27,10 @@ public class SmartContractConstants {
                      new SmartContractConstants(session.initiatorAddress, session.contractAddress, session.accessId, session.usedContracts));
     }
 
+
+    public static void forgetSmartContractConstants(long threadId) {
+        sessions.remove(threadId);
+    }
 
     public static SmartContractConstants getSessionSmartContractConstants(long threadId) {
         return Objects.requireNonNull(sessions.remove(threadId), "contract constants is null. Thread id=" + threadId);
