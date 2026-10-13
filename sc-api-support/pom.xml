@@ -77,6 +77,11 @@
                             <!--suppress UnresolvedMavenProperty -->
                             <finalName>sc-api-support-${git.closest.tag.name}-b${git.closest.tag.commit.count}</finalName>
                             <appendAssemblyId>false</appendAssemblyId>
+                            <!-- keep the plain jar as the reactor artifact: with appendAssemblyId=false an
+                                 attached assembly replaces it, and contract-executor would then compile
+                                 against the fat jar, whose module-info.class (sc-api-support's or one of
+                                 its dependencies') is not deterministic -->
+                            <attach>false</attach>
                         </configuration>
                     </execution>
                 </executions>
