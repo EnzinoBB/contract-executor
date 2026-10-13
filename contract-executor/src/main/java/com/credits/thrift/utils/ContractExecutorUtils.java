@@ -7,11 +7,18 @@ import exception.ContractExecutorException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.security.Permissions;
 import static com.credits.ApplicationProperties.API_VERSION;
-import com.credits.secure.Sandbox;
+import com.credits.secure.PermissionsManager;
 
 public class ContractExecutorUtils {
+
+    // every class of a contract runs with the contract's permissions from the moment it is defined
+    private static final PermissionsManager CONTRACT_PERMISSIONS = new PermissionsManager();
+
+    private static Class<?> confined(Class<?> contractClass) {
+        CONTRACT_PERMISSIONS.dropSmartContractRights(contractClass);
+        return contractClass;
+    }
 
     public static Class<?> findRootClass(List<Class<?>> classes) {
         return classes.stream()
@@ -21,7 +28,7 @@ public class ContractExecutorUtils {
     }
 
     public static void loadClassesToClassloader(List<ByteCodeObjectData> objectDataList, ByteCodeContractClassLoader classLoader) {
-        objectDataList.forEach(o -> classLoader.loadClass(o.getName(), o.getByteCode()));
+        objectDataList.forEach(o -> confined(classLoader.loadClass(o.getName(), o.getByteCode())));
     }
 
     public static List<Class<?>> compileSmartContractByteCode(List<ByteCodeObjectData> smartContractByteCodeData,
@@ -29,9 +36,7 @@ public class ContractExecutorUtils {
         
         List<Class<?>> compiledClasses = new ArrayList<>(smartContractByteCodeData.size());
         for (ByteCodeObjectData compilationUnit : smartContractByteCodeData) {
-            Permissions permissions = new Permissions();
-            Sandbox.confine(compilationUnit.getClass(), permissions);
-            compiledClasses.add(byteCodeContractClassLoader.loadClass(compilationUnit.getName(), compilationUnit.getByteCode()));
+            compiledClasses.add(confined(byteCodeContractClassLoader.loadClass(compilationUnit.getName(), compilationUnit.getByteCode())));
         }
         return compiledClasses;
     }
