@@ -165,12 +165,14 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
         session.usedContracts.put(session.contractAddress, usedContract);
     }
 
-    // A class a contract loader returns because its name is taken (one of the executor's own classes or
-    // the JDK's) is not contract code: confining it would confine it for the whole process.
+    // A contract's root class is always defined by a contract loader. One returned because its name is
+    // taken (one of the executor's own classes or the JDK's) is refused: confining it would confine it
+    // for the whole process, and running it unconfined would run it with the executor's permissions.
     private void dropRightsOfContractClass(Class<?> contractClass) {
-        if (contractClass.getClassLoader() instanceof ByteCodeContractClassLoader) {
-            permissionManager.dropSmartContractRights(contractClass);
+        if (!(contractClass.getClassLoader() instanceof ByteCodeContractClassLoader)) {
+            throw new ContractExecutorException("contract class " + contractClass.getName() + " is not defined by the contract");
         }
+        permissionManager.dropSmartContractRights(contractClass);
     }
 
     private List<Class<?>> compileClassesAndDropPermissions(List<ByteCodeObjectData> byteCodeObjectList, ByteCodeContractClassLoader classLoader)
