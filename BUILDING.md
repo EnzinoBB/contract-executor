@@ -8,6 +8,7 @@ Build 1518 (commit `ca2b28bb`, June 2024) is the executor shipped with node rele
 | `sc-api-internal` 2.2 (smart-contract-api), `general` 1.3 and `executor_client` 1.4 (thrift-api-client) were never published to the `mvn-repo` branches the poms point at (they stop at 2.1, 1.2 and 1.2, September 2019) | build and `mvn install` them from their repositories first |
 | thrift-api-client's default branch has a dependabot bump to libthrift 0.14, whose module name breaks `executor_client`'s `module-info` | use thrift-api-client at `59d1e9af`, the last commit before it |
 | `org.eclipse.jdt.core` and the Eclipse platform bundles declare open version ranges, which now resolve to jars built for Java 17 | pin them (`dependencyManagement` in the root poms) to the exact versions bundled in build 1518, matched class by class |
+| `node_client` 1.4 and `general` 1.2 come only from the `mvn-repo` branch of CREDITSCOM/thrift-api-client | a copy in `third-party/mvn-repo`, which `third-party/maven-settings.xml` mirrors every repository except Maven Central to (see `third-party/README.md`) |
 
 Two build-environment details also matter:
 
@@ -17,11 +18,14 @@ Two build-environment details also matter:
 ## Steps
 
 ```sh
-git clone https://github.com/CREDITSCOM/smart-contract-api.git && git -C smart-contract-api checkout 677c567f
+# in this repository, with its full git history
+export VENDORED_MAVEN_REPO=$PWD/third-party/mvn-repo
+MVN="mvn -s $PWD/third-party/maven-settings.xml"
+git clone -b build/reproducible-1518 https://github.com/EnzinoBB/smart-contract-api.git   # 677c567f
 git clone -b build/reproducible-1518 https://github.com/EnzinoBB/thrift-api-client.git
-(cd thrift-api-client && mvn -DskipTests install)
-(cd smart-contract-api && mvn -DskipTests install)
-mvn -DskipTests package   # in this repository, with its full git history
+(cd thrift-api-client && $MVN -DskipTests install)
+(cd smart-contract-api && $MVN -DskipTests install)
+$MVN -DskipTests package
 ```
 
 The jars are `contract-executor/target/contract-executor-v0.8.4-b<N>.jar` and
