@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Resolve every repository except Maven Central from the vendored repository next to this file
+     (third-party/mvn-repo), so no artifact comes from the creditscom mvn-repo branches the poms
+     declare. VENDORED_MAVEN_REPO must hold the absolute path of third-party/mvn-repo:
+       VENDORED_MAVEN_REPO=$PWD/third-party/mvn-repo mvn -s third-party/maven-settings.xml ... -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <mirrors>
+        <mirror>
+            <id>vendored</id>
+            <name>Vendored Credits artifacts (third-party/mvn-repo)</name>
+            <mirrorOf>*,!central</mirrorOf>
+            <url>file://${env.VENDORED_MAVEN_REPO}</url>
+        </mirror>
+    </mirrors>
+</settings>

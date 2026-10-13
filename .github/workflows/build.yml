@@ -3,7 +3,9 @@ name: Build
 # Reproducible build of contract-executor build 1518 (the executor of node release mainnet-4.2.532.0).
 # Its Credits dependencies were never published to the maven branches the poms point at
 # (sc-api-internal 2.2, general 1.3, executor_client 1.4), so they are built here from their
-# repositories first; node_client 1.4 and general 1.2 still come from those branches.
+# repositories first; node_client 1.4 and general 1.2 come from third-party/mvn-repo, a copy of
+# those branches. Nothing is fetched from CREDITSCOM: every repository except Maven Central is
+# mirrored to third-party/mvn-repo (third-party/maven-settings.xml), and the build log is checked.
 on:
   push:
   pull_request:
@@ -11,6 +13,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  VENDORED_MAVEN_REPO: ${{ github.workspace }}/third-party/mvn-repo
+  MVN: mvn -B -s ${{ github.workspace }}/third-party/maven-settings.xml
 
 jobs:
   build:
@@ -24,8 +30,8 @@ jobs:
       - name: Checkout smart-contract-api
         uses: actions/checkout@v4
         with:
-          repository: CREDITSCOM/smart-contract-api
-          ref: 677c567f308972224232023b18de531d22db2b8b  # dev: sc-api-internal 2.2
+          repository: EnzinoBB/smart-contract-api
+          ref: 677c567f308972224232023b18de531d22db2b8b  # build/reproducible-1518 = CREDITSCOM dev: sc-api-internal 2.2
           path: deps/smart-contract-api
 
       - name: Checkout thrift-api-client
@@ -43,16 +49,30 @@ jobs:
           distribution: zulu
           java-version: '11.0.3'
           cache: maven
+          # a new cache key: the first run resolves everything with the vendored mirror in place
+          cache-dependency-path: |
+            **/pom.xml
+            third-party/maven-settings.xml
 
+      # not quiet: the transfer log is checked for CREDITSCOM URLs below
       - name: Build dependencies
         run: |
-          (cd deps/thrift-api-client && mvn -B -q -DskipTests install)
-          (cd deps/smart-contract-api && mvn -B -q -DskipTests install)
+          set -o pipefail
+          (cd deps/thrift-api-client && $MVN -DskipTests install) | tee -a "$RUNNER_TEMP/mvn.log"
+          (cd deps/smart-contract-api && $MVN -DskipTests install) | tee -a "$RUNNER_TEMP/mvn.log"
 
       - name: Build contract executor
         run: |
-          mvn -B -q -DskipTests package
+          set -o pipefail
+          $MVN -DskipTests package | tee -a "$RUNNER_TEMP/mvn.log"
           ls -la contract-executor/target/*.jar sc-api-support/target/*.jar
+
+      - name: Check that nothing came from CREDITSCOM
+        run: |
+          grep 'Downloaded from vendored' "$RUNNER_TEMP/mvn.log" || true  # empty when the Maven cache already has them
+          if grep -inE 'creditscom|raw\.github' "$RUNNER_TEMP/mvn.log"; then
+            echo "::error::the build accessed a CREDITSCOM repository"; exit 1
+          fi
 
       - name: Module descriptors of the built jars
         if: always()
