@@ -16,7 +16,7 @@ permissions:
 
 env:
   VENDORED_MAVEN_REPO: ${{ github.workspace }}/third-party/mvn-repo
-  MVN: mvn -B -s ${{ github.workspace }}/third-party/maven-settings.xml
+  MVN: mvn -B -q -s ${{ github.workspace }}/third-party/maven-settings.xml
 
 jobs:
   build:
@@ -66,6 +66,14 @@ jobs:
           set -o pipefail
           $MVN -DskipTests package | tee -a "$RUNNER_TEMP/mvn.log"
           ls -la contract-executor/target/*.jar sc-api-support/target/*.jar
+
+      - name: Local repository tracking files
+        if: always()
+        run: |
+          ls -la ~/.m2 ~/.m2/repository | head; readlink -f ~/.m2/repository
+          find -L ~/.m2/repository/com/credits -type f | sort
+          for f in $(find -L ~/.m2/repository/com/credits -name _remote.repositories); do echo "== $f"; cat "$f"; done
+          find -L ~/.m2/repository -name _remote.repositories | xargs cat | grep -v '^#' | sed 's/.*>//' | sort | uniq -c
 
       - name: Check that nothing came from CREDITSCOM
         run: |
