@@ -1,0 +1,92 @@
+name: Debug module resolution
+
+# Repeats the build of build.yml many times, with and without the sc-api-support fix
+# (<attach>false</attach>), to measure how often contract-executor fails with
+# "module not found: com.credits.sc.api.support" and to log why.
+on:
+  push:
+    branches: [ci/debug-module-resolution]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, fixed]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    name: ${{ matrix.variant }} ${{ matrix.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: CREDITSCOM/smart-contract-api
+          ref: 677c567f308972224232023b18de531d22db2b8b
+          path: deps/smart-contract-api
+
+      - uses: actions/checkout@v4
+        with:
+          repository: EnzinoBB/thrift-api-client
+          ref: build/reproducible-1518
+          path: deps/thrift-api-client
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '11.0.3'
+          cache: maven
+
+      - name: Build dependencies
+        run: |
+          (cd deps/thrift-api-client && mvn -B -q -DskipTests install)
+          (cd deps/smart-contract-api && mvn -B -q -DskipTests install)
+
+      - name: Baseline sc-api-support pom (without the fix)
+        if: matrix.variant == 'baseline'
+        run: |
+          git checkout 6ec6133d -- sc-api-support/pom.xml
+          git diff --stat HEAD
+
+      - name: Build contract executor (-X)
+        run: |
+          mvn -B -X -DskipTests package > build.log 2>&1 && echo 0 > rc || echo $? > rc
+          echo "exit code: $(cat rc)"
+          grep -E '^\[(ERROR|WARNING)\]' build.log | grep -v 'Plugin validation' | head -40 || true
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          echo "== maven"; mvn -v | head -1
+          echo "== assembly order in sc-api-support (first added wins on duplicates)"
+          awk '/maven-assembly-plugin:2.2-beta-5:single \(jar-with-dependencies\) @ sc-api-support/{on=1} /@ contract-executor ---/{on=0} on' build.log \
+            | grep -nE 'Unpacking artifact contents for|Adding file-set from directory|module-info.class|main project artifact' | cut -c1-220 || true
+          echo "== sc-api-support artifact on the contract-executor compile path"
+          awk '/maven-compiler-plugin:3.8.0:compile \(default-compile\) @ contract-executor/{on=1} on' build.log \
+            | grep -oE '(sc-api-support/target/[^ :]*|com.credits.sc.api.support[^ ]*)' | sort | uniq -c | head || true
+          awk '/maven-compiler-plugin:3.8.0:compile \(default-compile\) @ contract-executor/{on=1} on' build.log \
+            | grep -m3 -E 'module-path|modulepath|Command line options' | tr ' ' '\n' | grep -E 'sc-api' | head || true
+          echo "== module-info of the jars"
+          for jar in sc-api-support/target/*.jar contract-executor/target/*.jar; do
+            [ -f "$jar" ] || continue
+            m=$(cd "$(mktemp -d)" && unzip -oq "$OLDPWD/$jar" module-info.class 2>/dev/null && javap module-info.class | sed -n 2p)
+            echo "$jar: $m"
+          done
+          echo "RESULT variant=${{ matrix.variant }} run=${{ matrix.run }} rc=$(cat rc)"
+          gzip -k build.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log-${{ matrix.variant }}-${{ matrix.run }}
+          path: build.log.gz
+          retention-days: 7
+
+      - name: Fail if the build failed
+        run: test "$(cat rc)" = 0
