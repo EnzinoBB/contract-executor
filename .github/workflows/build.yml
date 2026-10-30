@@ -135,7 +135,9 @@ jobs:
         with:
           repository: EnzinoBB/node
           path: node
-          sparse-checkout: ci/contracts
+          sparse-checkout: |
+            ci/contracts
+            samples/contracts
 
       - name: Checkout the Thrift definitions
         uses: actions/checkout@v4
