@@ -51,7 +51,7 @@ public class ContractExecutorServer implements Runnable {
         try {
             final var address = new InetSocketAddress(properties.executorHost, properties.executorPort);
             final var transport = new TServerSocket(address, Math.max(properties.readClientTimeout, 0));
-            final var server = new TThreadPoolServer(new TThreadPoolServer.Args(transport).processor(processor));
+            final var server = new TThreadPoolServer(new TThreadPoolServer.Args(transport).processor(ClientConnection.tracking(processor)));
             logger.info("Starting the Thrift server on {}:{}...", properties.executorHost, properties.executorPort);
             server.serve();
         } catch (TTransportException e) {

@@ -1,12 +1,16 @@
 package com.credits.service.contract;
 
 import com.credits.general.thrift.generated.Variant;
+import com.credits.thrift.ClientConnection;
 import com.credits.utils.StopWatch;
 import org.apache.thrift.annotation.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import pojo.session.DeployContractSession;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import static java.lang.Thread.sleep;
@@ -15,6 +19,9 @@ import static pojo.SmartContractConstants.forgetSmartContractConstants;
 import static pojo.SmartContractConstants.initSmartContractConstants;
 
 class LimitedExecutionMethod<R> {
+    private static final Logger logger = LoggerFactory.getLogger(LimitedExecutionMethod.class);
+    // how often a running method looks whether its node still waits
+    private static final long NODE_CHECK_MS = 250;
     protected DeployContractSession session;
     private StopWatch stopWatch;
     private Throwable exception;
@@ -44,7 +51,7 @@ class LimitedExecutionMethod<R> {
             limitedTimeThread.setName(session.contractAddress);
             initSmartContractConstants(limitedTimeThread.getId(), session);
             limitedTimeThread.start();
-            result = task.get(session.executionTime, MILLISECONDS);
+            result = awaitWhileNodeWaits(task);
 
         } catch (TimeoutException e) {
             limitedTimeThread.interrupt();
@@ -76,6 +83,26 @@ class LimitedExecutionMethod<R> {
             forgetSmartContractConstants(limitedTimeThread.getId());
         }
         return result;
+    }
+
+    // the result within the execution time; a TimeoutException as at the limit when the node has
+    // closed the connection before (it gave up on the answer, which could not be delivered)
+    private R awaitWhileNodeWaits(FutureTask<R> task) throws Exception {
+        final long deadline = System.nanoTime() + MILLISECONDS.toNanos(session.executionTime);
+        while (true) {
+            final long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (left <= 0) {
+                throw new TimeoutException();
+            }
+            try {
+                return task.get(Math.min(left, NODE_CHECK_MS), MILLISECONDS);
+            } catch (TimeoutException notYet) {
+                if (ClientConnection.closedByClient()) {
+                    logger.warn("{}: the node closed the connection, the call is stopped", session.contractAddress);
+                    throw notYet;
+                }
+            }
+        }
     }
 
     protected R runIntoCurrentThread(Callable<R> block){
