@@ -43,7 +43,8 @@ class LimitTimeThreadMethodExecutor extends LimitedExecutionMethod<Variant> {
     }
 
     private Variant invokeUsingPrimaryContractState(Variant... params) {
-        instance = deserialize(session.contractState, instance.getClass().getClassLoader());
+        final var classLoader = instance.getClass().getClassLoader();
+        instance = ContractCodeLimit.run("deserialize", session.executionTime, () -> deserialize(session.contractState, classLoader));
         return invokeIntoLimitTimeThread(params);
     }
 
