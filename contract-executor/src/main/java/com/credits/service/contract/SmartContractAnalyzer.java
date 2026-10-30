@@ -33,13 +33,32 @@ import static org.apache.commons.lang3.exception.ExceptionUtils.rethrow;
 
 public interface SmartContractAnalyzer {
 
+    // Only the node's API reads the token standard (its token cache and the token list); contract
+    // execution never does. A token standard interface the class declares itself gives the id build
+    // 1518 gives. Otherwise the most specific standard the class implements at all: the v2
+    // interfaces (which extend the v1 ones) and standards reached through a superinterface, which
+    // build 1518 reports as "not a token" (0).
     static long defineTokenStandard(Class<?> contractClass) {
         final var contractInterfaces = contractClass.getInterfaces();
-        return stream(TokenStandardId.values())
+        final var declared = stream(TokenStandardId.values())
                 .filter(ts -> stream(contractInterfaces).anyMatch(ci -> ts.getTokenStandardClass().equals(ci)))
+                .findFirst()
+                .orElse(NOT_A_TOKEN);
+        if (declared != NOT_A_TOKEN) {
+            return declared.getId();
+        }
+        return INHERITED_TOKEN_STANDARDS.stream()
+                .filter(ts -> ts.getTokenStandardClass().isAssignableFrom(contractClass))
                 .findFirst()
                 .orElse(NOT_A_TOKEN).getId();
     }
+
+    // most specific first: an extension standard extends its basic one
+    List<TokenStandardId> INHERITED_TOKEN_STANDARDS = List.of(
+            TokenStandardId.EXTENSION_TOKEN_STANDARD,
+            TokenStandardId.BASIC_TOKEN_STANDARD,
+            TokenStandardId.EXTENSION_STANDARD,
+            TokenStandardId.BASIC_STANDARD);
 
     static void checkThatIsNotCreditsToken(Class<?> contractClass, Object instance) {
         stream(contractClass.getInterfaces())
