@@ -63,7 +63,7 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
         dropRightsOfContractClass(contractClass);
         final var methodResult = new Deployer(session, contractClass).deploy();
         final var newContractState = methodResult.getInvokedObject() != null
-                                     ? serialize(methodResult.getInvokedObject())
+                                     ? ContractCodeLimit.run("serialize", session.executionTime, () -> serialize(methodResult.getInvokedObject()))
                                      : new byte[0];
         return new ReturnValue(newContractState,
                                singletonList(methodResult.getException() == null
@@ -76,7 +76,8 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
     public ReturnValue executeSmartContract(InvokeMethodSession session) throws ContractExecutorException {
         final var contractClassLoader = getSmartContractClassLoader();
         loadClassesToClassloader(session.byteCodeObjectDataList,contractClassLoader);
-        final var instance = deserialize(session.contractState, contractClassLoader);
+        final var instance = ContractCodeLimit.run("deserialize", session.executionTime,
+                                                   () -> deserialize(session.contractState, contractClassLoader));
 
         initNonStaticContractFields(session, instance);
         addThisContractToUsedContracts(session, instance);
@@ -88,7 +89,8 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
         dropRightsOfContractClass(contractInstance.getClass());
         final var methodResults = executor.executeIntoLimitTimeThread();
 
-        session.usedContracts.values().forEach(contract -> contract.getContractData().setContractState(serialize(contract.getInstance())));
+        session.usedContracts.values().forEach(contract -> contract.getContractData().setContractState(
+                ContractCodeLimit.run("serialize", session.executionTime, () -> serialize(contract.getInstance()))));
         ReturnValue res = new ReturnValue(session.usedContracts.get(session.contractAddress).getContractData().getContractState(),
                                methodResults.stream()
                                        .map(mr -> mr.getException() == null
@@ -123,7 +125,8 @@ public class ContractExecutorServiceImpl implements ContractExecutorService {
 
         var contractClassLoader = new ByteCodeContractClassLoader();
         compileSmartContractByteCode(byteCodeObjectDataList, contractClassLoader);
-        return SmartContractAnalyzer.getContractVariables(deserialize(contractState, contractClassLoader));
+        return SmartContractAnalyzer.getContractVariables(
+                ContractCodeLimit.run("deserialize", 0, () -> deserialize(contractState, contractClassLoader)));
     }
 
     @Override
