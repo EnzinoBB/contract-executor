@@ -115,12 +115,68 @@ jobs:
             contract-executor/target/contract-executor-*.jar
             sc-api-support/target/sc-api-support-*.jar
 
+  # The token scenarios of EnzinoBB/node (ci/contracts/executor_harness.py) on the release executor and
+  # on this build, through their Thrift interface with a stub of the node: every answer (status, return
+  # value, state hashes, emitted transactions) must be the same, or contracts would give different
+  # results on the nodes running this build.
+  compare-results:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Download jars
+        uses: actions/download-artifact@v4
+        with:
+          name: contract-executor-${{ github.sha }}
+          path: jars
+
+      - name: Checkout the harness
+        uses: actions/checkout@v4
+        with:
+          repository: EnzinoBB/node
+          path: node
+          sparse-checkout: |
+            ci/contracts
+            samples/contracts
+
+      - name: Checkout the Thrift definitions
+        uses: actions/checkout@v4
+        with:
+          repository: CREDITSCOM/thrift-interface-definitions
+          ref: 35620f5de439ba02d5f32aaf0a9e4825575afed5  # the node's submodule
+          path: node/third-party/thrift-interface-definitions
+
+      - name: Release executor and its JDK
+        run: |
+          curl -sSfL https://github.com/CREDITSCOM/node/releases/download/mainnet-4.2.532.0/Ubuntu20_Mainnet-4.2.532.0.tar.gz \
+            | tar -xzf - csnode/contract-executor.jar csnode/sc-api-support.jar csnode/ojdkbuild
+          # laid out like the release: the manifest loads sc-api-support.jar from the jar's directory
+          mkdir built
+          cp "$(ls -S jars/contract-executor/target/contract-executor-*.jar | head -1)" built/contract-executor.jar
+          cp "$(ls -S jars/sc-api-support/target/sc-api-support-*.jar | head -1)" built/sc-api-support.jar
+          python3 -m pip install --quiet thriftpy2 base58
+
+      - name: Compare
+        run: |
+          python3 node/ci/contracts/executor_harness.py \
+            --jar csnode/contract-executor.jar --jar built/contract-executor.jar \
+            --jdk csnode/ojdkbuild/java-11-openjdk-11.0.4 --work harness-run --json harness.json
+
+      - name: Upload the answers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-${{ github.sha }}
+          path: |
+            harness.json
+            harness-run/*/executor.log
+
   # A tag executor-<name> publishes the jars under the names the node release uses: the jar with
   # dependencies as contract-executor.jar (its manifest loads sc-api-support.jar from its directory)
   # and the sc-api-support assembly as sc-api-support.jar. The community node packages take them
   # from here.
   release:
-    needs: build
+    needs: [build, compare-results]
     if: startsWith(github.ref, 'refs/tags/executor-')
     runs-on: ubuntu-24.04
     permissions:
@@ -149,5 +205,9 @@ jobs:
 
           A node accepts it only with executor_commit_max >= ${commits} in config.ini.
           NOTES
-          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+          # executor-<name>-rc<N>: a pre-release, which the set-up of the node packages (it takes the
+          # latest release) does not download
+          prerelease=
+          case "$GITHUB_REF_NAME" in *-rc*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $prerelease \
             --title "Contract executor ${GITHUB_REF_NAME#executor-} (build ${commits})" --notes-file notes.md
